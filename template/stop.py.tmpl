@@ -41,8 +41,12 @@ def _write_int(path: Path, value: int) -> None:
 
 def _log(msg: str) -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_FILE.open("a", encoding="utf-8") as f:
-        f.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S%z')}] {msg}\n")
+    # 新文件写 UTF-8 BOM，让 PowerShell Get-Content 能正确识别中文
+    new_file = not LOG_FILE.exists()
+    with LOG_FILE.open("ab") as f:
+        if new_file:
+            f.write(b"\xef\xbb\xbf")
+        f.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S%z')}] {msg}\n".encode("utf-8"))
 
 
 def main() -> int:
