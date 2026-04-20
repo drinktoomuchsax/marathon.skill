@@ -1,0 +1,108 @@
+"""Marathon Stop hook — 拦截 Claude Code 的 Stop 事件、注入续跑指令。
+
+机制：
+- 首次运行：把"实验开始时间戳"写到 ./exp-start（若已有则沿用）
+- 读 ./exp-block-count（block 次数累计）
+- elapsed >= DURATION_HOURS*3600 或 block_count >= BLOCK_LIMIT 时 exit 0 放行
+- 否则 stdout 输出 {"decision":"block","reason":"..."}，Claude 继续下一轮
+
+Windows 必须用 Python 作为 hook（Git Bash 的内部 bash.exe 不能被 CreateProcess 调起）。
+"""
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+# ─── 仅这 2 行需要按任务调整 ────────────────────────────────────────
+DURATION_HOURS = {{DURATION_HOURS}}      # 硬停时长（小时）
+BLOCK_LIMIT    = 5000                    # 安全兜底：连续 block 上限
+# ──────────────────────────────────────────────────────────────────
+
+TASK_DIR   = Path(__file__).resolve().parent.parent.parent  # .claude/hooks/ 上溯两级
+START_FILE = TASK_DIR / "exp-start"
+COUNT_FILE = TASK_DIR / "exp-block-count"
+LOG_FILE   = TASK_DIR / "logs" / "stop-hook.log"
+
+DURATION_LIMIT = DURATION_HOURS * 60 * 60
+
+
+def _read_int(path: Path, default: int) -> int:
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return default
+
+
+def _write_int(path: Path, value: int) -> None:
+    path.write_text(str(value), encoding="utf-8")
+
+
+def _log(msg: str) -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S%z')}] {msg}\n")
+
+
+def main() -> int:
+    # 消费 stdin（Claude Code 会传 hook event payload，这里暂不使用）
+    try:
+        sys.stdin.read()
+    except Exception:
+        pass
+
+    if not START_FILE.exists():
+        _write_int(START_FILE, int(time.time()))
+
+    start_ts = _read_int(START_FILE, int(time.time()))
+    elapsed  = int(time.time()) - start_ts
+    block_count = _read_int(COUNT_FILE, 0)
+
+    # 放行条件
+    if elapsed >= DURATION_LIMIT:
+        _log(f"RELEASE: 时长已到（elapsed={elapsed}s, block_count={block_count}）")
+        try:
+            COUNT_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return 0
+    if block_count >= BLOCK_LIMIT:
+        _log(f"RELEASE: block 次数达上限 {BLOCK_LIMIT}")
+        try:
+            COUNT_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return 0
+
+    block_count += 1
+    _write_int(COUNT_FILE, block_count)
+
+    remaining = DURATION_LIMIT - elapsed
+    rem_h = remaining // 3600
+    rem_m = (remaining % 3600) // 60
+    _log(f"CONTINUE: elapsed={elapsed}s remaining={rem_h}h{rem_m}m block={block_count}")
+
+    reason = (
+        f"继续推进当前任务。累计运行 {elapsed} 秒，剩余约 {rem_h}h{rem_m}m（block #{block_count}）。\n\n"
+        "执行协议：\n"
+        "(1) 先读 task.md 核对范围；读 progress.md 了解已完成项与下一步\n"
+        "(2) 选一个最小可交付子任务，推进到可运行/可验证状态\n"
+        "(3) 完成后立刻更新 progress.md（时间戳、改动文件、下一步、阻塞项）\n"
+        "(4) 每累计 60 分钟写一份 reports/hour-N.md\n"
+        "(5) 上下文快满时先把关键状态压入 progress.md 再继续\n"
+        "(6) 不询问用户；禁访问任务目录外文件；禁 git push / gh\n"
+        "(7) 遇到选择题优先选『最简单能跑通』的那条\n"
+        "现在开始下一轮。"
+    )
+
+    payload = {"decision": "block", "reason": reason}
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.write(b"\n")
+    sys.stdout.buffer.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
