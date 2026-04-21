@@ -22,6 +22,20 @@ git clone git@github.com:drinktoomuchsax/marathon.skill.git ~/.claude/skills/mar
 
 （也支持把整个仓库直接当 skill 目录放到 `~/.claude/skills/<任意名字>/`，Claude Code 会自动读取 `SKILL.md` 里的 frontmatter。）
 
+## 更新
+
+任意 Claude Code 会话里说：
+
+> 更新 marathon
+
+或者手动：
+
+```bash
+git -C ~/.claude/skills/marathon pull
+```
+
+**注意**：更新只影响之后**新创建**的任务。已存在的任务目录里的 `stop.py` / `CLAUDE.md` 是生成时一次性拷贝的，独立于 skill。若想让老任务也吃上新版本，把 `~/.claude/skills/marathon/template/stop.py.tmpl` 的内容覆盖到老任务的 `.claude/hooks/stop.py` 即可（不要动 `exp-start` / `exp-block-count` / `logs/` 这些运行态数据）。
+
 ## 使用方式（3 步）
 
 ### 1. 让 Claude 起草

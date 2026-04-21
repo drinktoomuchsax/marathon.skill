@@ -1,9 +1,25 @@
 ---
 name: marathon
-description: 当用户想让 Claude Code 无人值守自主跑数小时（跨多轮 agent loop）完成一个开放式任务时触发。典型触发词：「自主跑 N 小时」、「无人值守」、「marathon」、「overnight 跑」、「开一个 12h 任务」、「让 claude 自己做完」、「autoloop」。本 skill 用 Stop hook 拦截每次退出并注入续跑指令，直到时长或 block 次数到上限。
+description: 当用户想让 Claude Code 无人值守自主跑数小时（跨多轮 agent loop）完成一个开放式任务时触发。典型触发词：「自主跑 N 小时」、「无人值守」、「marathon」、「overnight 跑」、「开一个 12h 任务」、「让 claude 自己做完」、「autoloop」。也响应「更新 marathon」/「marathon update」—— 此时执行 `git -C ~/.claude/skills/marathon pull`。本 skill 用 Stop hook 拦截每次退出并注入续跑指令，直到时长或 block 次数到上限。
 ---
 
 # Marathon · 无人值守自主长跑
+
+## 指令：更新 skill
+
+当用户说「更新 marathon」/「marathon update」/「升级 marathon skill」等，**直接**执行并把输出给用户看：
+
+```bash
+git -C ~/.claude/skills/marathon pull
+```
+
+Windows（Git Bash / PowerShell）：
+
+```bash
+git -C /c/Users/<用户名>/.claude/skills/marathon pull
+```
+
+拉完后**提醒用户**：新版本对已存在的任务目录（`<task-dir>/.claude/hooks/stop.py` 等）不会生效；若想让老任务也用新模板，把 `~/.claude/skills/marathon/template/stop.py.tmpl` 的内容覆盖过去即可（`exp-start` / `exp-block-count` / `logs/` 等运行态数据不要动）。
 
 ## 你在处理什么
 
